@@ -639,7 +639,7 @@ function iniciarConteoCompleto(){
   const productos = Object.entries(state.productosPDV).map(([codigo,p])=>({
     codigo, nombre: p.nombre, existenciaPDV: p.stock
   }));
-  iniciarConteoConLista(productos, "Inventario completo");
+  iniciarConteoConLista(productos, "Inventario completo", true);
 }
 
 /* ---- Motor de conteo (compartido por pre-inventario e inventario completo) ----
@@ -647,18 +647,24 @@ function iniciarConteoCompleto(){
    las cantidades ingresadas se SUMAN al acumulado de ese producto, no se
    reemplazan. Esto cubre el caso de encontrar el mismo producto en distintos
    lugares de la tienda.
+
+   El pre-inventario es solo de control/comparación: NUNCA escribe en el stock
+   real del PDV, sin importar qué tan grandes sean las diferencias que
+   encuentre. Solo el inventario completo (aplicaStock=true) ajusta el stock
+   real al finalizar.
 --------------------------------------------------------------------------- */
 
 let sesionActual = null;
 
 function iniciarConteo(plantillaId){
   const p = state.plantillas.find(x=>x.id===plantillaId);
-  iniciarConteoConLista(p.productos.map(x=>({...x})), p.nombre);
+  iniciarConteoConLista(p.productos.map(x=>({...x})), p.nombre, false);
 }
 
-function iniciarConteoConLista(productos, etiqueta){
+function iniciarConteoConLista(productos, etiqueta, aplicaStock){
   sesionActual = {
     etiqueta,
+    aplicaStock: !!aplicaStock,
     // aplicado = cuánta corrección ya se escribió en el PDV para este producto
     // en esta sesión (se compara contra el nuevo total cada vez que se cuenta
     // de nuevo, para escribir solo la diferencia que falta).
@@ -796,6 +802,15 @@ function cancelarConteo(){
 }
 
 async function finalizarConteo(){
+  const tocados = sesionActual.productos.filter(p=>p.tocado);
+
+  // El pre-inventario es solo de control: se muestra la comparación y no se
+  // toca el stock real del PDV. Solo el inventario completo escribe.
+  if(!sesionActual.aplicaStock){
+    mostrarResultadoConteo(tocados, []);
+    return;
+  }
+
   // Aquí, y no antes, es cuando se escribe en el PDV: se aplica la corrección
   // de cada producto contado, una sola vez, leyendo el stock en vivo de cada
   // uno justo antes de escribir (así las ventas hechas en caja durante todo
@@ -810,10 +825,14 @@ async function finalizarConteo(){
   };
   render();
 
-  const tocados = sesionActual.productos.filter(p=>p.tocado);
   for(const p of tocados){ await aplicarCorreccionInmediata(p); }
 
   const pendientes = sesionActual.productos.filter(p=>p.tocado && !p.sincronizado);
+  mostrarResultadoConteo(tocados, pendientes);
+}
+
+function mostrarResultadoConteo(tocados, pendientes){
+  const esSoloControl = !sesionActual.aplicaStock;
   state.view = {
     html: ()=>`
       <div class="backline">
@@ -828,9 +847,9 @@ async function finalizarConteo(){
         </div>` : ''}
       <div class="card">
         <p class="desc" style="margin-bottom:14px;">
-          El stock del PDV se quedó igual durante todo el conteo y recién se ajustó ahora, al finalizar,
-          sumando o restando sobre el stock real de este momento (así las ventas hechas en caja
-          mientras contabas ya quedan reflejadas).
+          ${esSoloControl
+            ? 'Esto es un pre-inventario de control: solo compara lo contado contra el catálogo, el stock real del PDV <b>no se modificó</b>. Si quieres que estas diferencias se apliquen de verdad, hazlo desde "Inv. completo".'
+            : 'El stock del PDV se quedó igual durante todo el conteo y recién se ajustó ahora, al finalizar, sumando o restando sobre el stock real de este momento (así las ventas hechas en caja mientras contabas ya quedan reflejadas).'}
         </p>
         ${tocados.map(p=>{
           const dif = p.contado - p.existenciaPDV;
