@@ -503,6 +503,22 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<
 /* ---- PLANTILLAS: crear (escaneando productos) ---- */
 function crearPlantilla(){
   const draft = { nombre: "", productos: [] };
+
+  function onCodigoPlantilla(codigo){
+    const info = buscarProductoPorCodigo(codigo);
+    if(!info){
+      toast("Código no encontrado en el catálogo del PDV: " + codigo);
+      return;
+    }
+    if(draft.productos.some(p=>p.codigo === codigo)){
+      toast("Ese producto ya está en la plantilla");
+      return;
+    }
+    draft.productos.push(info);
+    document.getElementById("pl-lista").innerHTML = renderListaDraft(draft);
+    toast(info.nombre + " agregado");
+  }
+
   state.view = {
     html: ()=>`
       <div class="backline">
@@ -518,7 +534,7 @@ function crearPlantilla(){
           <label>Escanear producto para agregar</label>
           <div class="scan-row">
             ${inputPistola("pl-scan")}
-            <button class="btn btn-secondary" onclick="abrirCamara(codigoEscaneadoPlantilla)">📷</button>
+            <button class="btn btn-secondary" onclick="window.__draftAbrirCamara()">📷</button>
           </div>
         </div>
       </div>
@@ -529,26 +545,12 @@ function crearPlantilla(){
       <button class="btn btn-primary btn-block" onclick="guardarPlantillaDraft()">Guardar plantilla</button>
     `,
     after: ()=>{
-      activarInputPistola("pl-scan", codigoEscaneadoPlantilla);
+      activarInputPistola("pl-scan", onCodigoPlantilla);
     }
   };
   window.__draftPlantilla = draft;
+  window.__draftAbrirCamara = () => abrirCamara(onCodigoPlantilla);
   render();
-
-  window.codigoEscaneadoPlantilla = function(codigo){
-    const info = buscarProductoPorCodigo(codigo);
-    if(!info){
-      toast("Código no encontrado en el catálogo del PDV: " + codigo);
-      return;
-    }
-    if(draft.productos.some(p=>p.codigo === codigo)){
-      toast("Ese producto ya está en la plantilla");
-      return;
-    }
-    draft.productos.push(info);
-    document.getElementById("pl-lista").innerHTML = renderListaDraft(draft);
-    toast(info.nombre + " agregado");
-  };
 }
 
 function renderListaDraft(draft){
